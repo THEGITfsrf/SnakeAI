@@ -50,11 +50,9 @@ python Snake2.py
 ## Project Structure
 
 ```
-.
 |-- Snake2.py        # main game script
 |-- snek.png         # window icon
 |-- Freedom_Font.TTF # custom font
-|-- requirements.txt
 |-- README.md
 ```
 
