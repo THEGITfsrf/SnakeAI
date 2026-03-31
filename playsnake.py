@@ -1,7 +1,26 @@
+import random
 import pygame
 import numpy as np
 import torch
 from universal import MultiEnvRLAgent
+
+
+def cast_ray(head_x, head_y, angle, snake_body, width, height, tile_size):
+    import math
+
+    rad = math.radians(angle)
+    x, y = head_x, head_y
+    max_dist = max(width, height)
+    dist = 0
+
+    while 0 <= int(x) < width and 0 <= int(y) < height and (int(x), int(y)) not in snake_body:
+        x += math.cos(rad) * tile_size
+        y += math.sin(rad) * tile_size
+        dist += 1
+        if dist >= max_dist:
+            break
+
+    return dist / max_dist
 
 # ---------- SnakeGame ----------
 class SnakeGame:
@@ -17,50 +36,44 @@ class SnakeGame:
 
         self.reset()
 
-    def reset(self):
-        center_x = (self.width // self.tile_size // 2) * self.tile_size
-        center_y = (self.height // self.tile_size // 2) * self.tile_size
-
+    def reset(self, tile_size=None):
+        if tile_size is not None:
+            self.tile_size = tile_size
+        start_x = self.tile_size
+        start_y = self.tile_size
         self.snake_body = [
-            (center_x, center_y),
-            (center_x, center_y + self.tile_size),
-            (center_x, center_y + 2 * self.tile_size)
+            (start_x, start_y),
+            (start_x - self.tile_size, start_y),
+            (start_x - (2 * self.tile_size), start_y),
         ]
-
-        self.direction = "UP"  # important so it doesn't insta crash
+        self.direction = "RIGHT"
         self.food = False
         self.food_pos = (None, None)
         self.score = 0
         self.game_over = False
         self.spawn_food()
         return self.get_state()
-    def spawn_food(self):
-        valid_positions = []
-        for x in range(0, self.width, self.tile_size):
-            for y in range(0, self.height, self.tile_size):
-                pos = (x, y)
-                if pos not in self.snake_body:
-                    valid_positions.append(pos)
 
-        if valid_positions:
-            self.food_pos = valid_positions[np.random.randint(len(valid_positions))]
-            self.food = True
-        else:
-            self.game_over = True
+    def spawn_food(self):
+        while True:
+            x = random.randrange(0, self.width, self.tile_size)
+            y = random.randrange(0, self.height, self.tile_size)
+            if (x, y) not in self.snake_body:
+                self.food_pos = (x, y)
+                self.food = True
+                break
 
     def step(self, action):
         if self.game_over:
             return self.get_state(), 0, True
 
-        directions = ["DOWN","RIGHT","UP","LEFT"]
+        turn_left = {"UP": "LEFT", "DOWN": "RIGHT", "LEFT": "DOWN", "RIGHT": "UP"}
+        turn_right = {"UP": "RIGHT", "DOWN": "LEFT", "LEFT": "UP", "RIGHT": "DOWN"}
 
-        # turn logic
         if action == 1:
-            idx = directions.index(self.direction)
-            self.direction = directions[idx - 1]
+            self.direction = turn_left[self.direction]
         elif action == 2:
-            idx = directions.index(self.direction)
-            self.direction = directions[(idx + 1) % 4]
+            self.direction = turn_right[self.direction]
 
         head_x, head_y = self.snake_body[0]
 
@@ -82,15 +95,6 @@ class SnakeGame:
             self.game_over = True
             return self.get_state(), -10, True
 
-        # food
-        if self.food and new_head == self.food_pos:
-            self.snake_body.insert(0, new_head)
-            self.score += 1
-            self.food = False
-            self.spawn_food()
-        else:
-            self.snake_body.insert(0, new_head)
-            self.snake_body.pop()
         reward = 0
 
         if self.food and new_head == self.food_pos:
@@ -108,71 +112,80 @@ class SnakeGame:
         new_dist = abs(new_head[0] - food_x) + abs(new_head[1] - food_y)
 
         reward += 0.02
-        reward += 0.01 * (prev_dist - new_dist)
+        if new_head not in self.snake_body[:-1]:
+            reward += 0.01 * (prev_dist - new_dist)
 
         return self.get_state(), reward, False
 
     def get_state(self):
         head_x, head_y = self.snake_body[0]
         tile = self.tile_size
+        dist_left = head_x / self.width
+        dist_right = (self.width - head_x) / self.width
+        dist_up = head_y / self.height
+        dist_down = (self.height - head_y) / self.height
 
-        directions = [
-            (0, -tile),   # UP
-            (0, tile),    # DOWN
-            (-tile, 0),   # LEFT
-            (tile, 0)     # RIGHT
-        ]
+        def danger_at(direction):
+            if direction == "UP":
+                pos = (head_x, head_y - tile)
+            elif direction == "DOWN":
+                pos = (head_x, head_y + tile)
+            elif direction == "LEFT":
+                pos = (head_x - tile, head_y)
+            else:
+                pos = (head_x + tile, head_y)
 
-        ray_data = []
+            return int(
+                pos in self.snake_body
+                or pos[0] < 0
+                or pos[0] >= self.width
+                or pos[1] < 0
+                or pos[1] >= self.height
+            )
 
-        for dx, dy in directions:
-            distance = 0
-            food_seen = 0
-            body_distance = 0
+        dir_map = {
+            "UP": ["UP", "RIGHT", "LEFT"],
+            "DOWN": ["DOWN", "LEFT", "RIGHT"],
+            "LEFT": ["LEFT", "UP", "DOWN"],
+            "RIGHT": ["RIGHT", "DOWN", "UP"],
+        }
 
-            x, y = head_x, head_y
-
-            while True:
-                x += dx
-                y += dy
-                distance += 1
-
-                # hit wall
-                if x < 0 or x >= self.width or y < 0 or y >= self.height:
-                    break
-
-                # food
-                if (x, y) == self.food_pos:
-                    food_seen = 1
-
-                # body (only first hit matters)
-                if (x, y) in self.snake_body and body_distance == 0:
-                    body_distance = distance
-
-            # normalize distances
-            max_dist = max(self.width, self.height) / tile
-            wall_dist = distance / max_dist
-            body_dist = (body_distance / max_dist) if body_distance > 0 else 1.0
-
-            ray_data.extend([wall_dist, body_dist, food_seen])
-
-        # --- ORIGINAL FEATURES ---
+        danger = [danger_at(d) for d in dir_map[self.direction]]
         direction_flags = [
             int(self.direction == "LEFT"),
             int(self.direction == "RIGHT"),
             int(self.direction == "UP"),
-            int(self.direction == "DOWN")
+            int(self.direction == "DOWN"),
         ]
 
         food_x, food_y = self.food_pos
-        food_flags = [
-            int(food_x < head_x),
-            int(food_x > head_x),
-            int(food_y < head_y),
-            int(food_y > head_y)
+        food_dx = (food_x - head_x) / self.width
+        food_dy = (food_y - head_y) / self.height
+
+        dir_angle_map = {"UP": -90, "RIGHT": 0, "DOWN": 90, "LEFT": 180}
+        current_angle = dir_angle_map[self.direction]
+        angles = np.linspace(-170, 170, 17)
+        ray_values = [
+            cast_ray(
+                head_x,
+                head_y,
+                current_angle + angle,
+                self.snake_body,
+                self.width,
+                self.height,
+                self.tile_size,
+            )
+            for angle in angles
         ]
 
-        return np.array(ray_data + direction_flags + food_flags, dtype=float)
+        return np.array(
+            danger
+            + direction_flags
+            + [dist_left, dist_right, dist_up, dist_down, food_dx, food_dy]
+            + ray_values,
+            dtype=float,
+        )
+
     def render(self):
         self.screen.fill((0, 0, 0))
 
@@ -190,8 +203,12 @@ class SnakeGame:
 
 # ---------- Load Agent ----------
 NUM_ENVS = 1
-INPUT_SIZE = 20
+INPUT_SIZE = 30
 OUTPUT_SIZE = 3
+HIGH_SCORE_THRESH = 3
+TILE_DECREMENT = 5
+BASE_TILE = 100
+MIN_TILE = 5
 
 agent = MultiEnvRLAgent(
     input_size=INPUT_SIZE,
@@ -229,5 +246,7 @@ while True:
     if done:
         print("Score:", game.score)
         pygame.time.wait(500)
-        state = game.reset()
+        shrink_steps = game.score // HIGH_SCORE_THRESH
+        target_tile_size = max(MIN_TILE, BASE_TILE - (shrink_steps * TILE_DECREMENT))
+        state = game.reset(tile_size=target_tile_size)
         states[0] = state
