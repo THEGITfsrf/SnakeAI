@@ -30,7 +30,13 @@ class SnakeGame:
     def reset(self, tile_size=None):
         if tile_size is not None:
             self.tile_size = tile_size
-        self.snake_body = [(100, 100), (100, 200), (100, 300)]
+        start_x = self.tile_size
+        start_y = self.tile_size
+        self.snake_body = [
+            (start_x, start_y),
+            (start_x - self.tile_size, start_y),
+            (start_x - (2 * self.tile_size), start_y),
+        ]
         self.direction = "RIGHT"
         self.food = False
         self.food_pos = (None, None)
@@ -164,6 +170,7 @@ OUTPUT_SIZE = 3
 WINDOW = 100  # rolling window for min/max logging
 HIGH_SCORE_THRESH = 3   # score to trigger tile shrink
 TILE_DECREMENT = 5    # reduce tile size by this
+BASE_TILE = 100
 MIN_TILE = 5          # don’t go too small
 states = np.zeros((NUM_ENVS, INPUT_SIZE), dtype=np.float32)
 rewards = [0] * NUM_ENVS
@@ -184,7 +191,6 @@ rolling_scores = deque(maxlen=WINDOW)
 rolling_min_log = []
 rolling_max_log = []
 sim_steps = 0
-last_shrink_score = [0] * NUM_ENVS  # track last shrink for each env
 try:
     for episode in tqdm(range(GAMES)):
         done_flags = [False] * NUM_ENVS
@@ -226,12 +232,11 @@ try:
         # inside your reset loop, after game ends:
         # inside the reset loop, after each game ends
         for i, game in enumerate(games):
-            # only shrink if we've reached the next multiple of 3 and not already shrunk at this multiple
-            if game.score >= HIGH_SCORE_THRESH and (game.score // HIGH_SCORE_THRESH) > (last_shrink_score[i] // HIGH_SCORE_THRESH):
-                if game.tile_size > MIN_TILE:
-                    game.tile_size = max(MIN_TILE, game.tile_size - TILE_DECREMENT)
-                    last_shrink_score[i] = game.score  # update last shrink
-                    print(f"env {i} shrunk to {game.tile_size} at score {game.score}")
+            shrink_steps = game.score // HIGH_SCORE_THRESH
+            target_tile_size = max(MIN_TILE, BASE_TILE - (shrink_steps * TILE_DECREMENT))
+            if target_tile_size != game.tile_size:
+                game.tile_size = target_tile_size
+                print(f"env {i} set to {game.tile_size} at score {game.score}")
             states[i] = game.reset(tile_size=game.tile_size)
             rewards[i] = 0
             dones[i] = False
