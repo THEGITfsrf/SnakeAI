@@ -24,7 +24,7 @@ def cast_ray(head_x, head_y, angle, snake_body, width, height, tile_size):
 
 # ---------- SnakeGame ----------
 class SnakeGame:
-    def __init__(self, width=1200, height=800, tile_size=10):
+    def __init__(self, width=1200, height=800, tile_size=50):
         self.width = width
         self.height = height
         self.tile_size = tile_size
@@ -198,7 +198,7 @@ class SnakeGame:
                              (*self.food_pos, self.tile_size, self.tile_size))
 
         pygame.display.flip()
-        self.clock.tick(15)  # adjust speed here
+        self.clock.tick(90)  # adjust speed here
 
 
 # ---------- Load Agent ----------
