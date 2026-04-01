@@ -24,7 +24,7 @@ def cast_ray(head_x, head_y, angle, snake_body, width, height, tile_size):
 
 # ---------- SnakeGame ----------
 class SnakeGame:
-    def __init__(self, width=1200, height=800, tile_size=100):
+    def __init__(self, width=1200, height=800, tile_size=10):
         self.width = width
         self.height = height
         self.tile_size = tile_size
